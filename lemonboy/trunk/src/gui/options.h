@@ -44,18 +44,12 @@ void options_apply();
 void options_print(void);
 #endif
 
-#ifdef WIZLIB
-#define MAX_VIDEO_MODES 7
-#else
 #define MAX_VIDEO_MODES 9
-#endif
 
 typedef enum videomodesT {
     vmode_normal=0,
-#ifndef WIZLIB
     vmode_fs,
     vmode_fsasp,
-#endif
     vmode_dbl,
     vmode_dbldef,
     vmode_ipol,
