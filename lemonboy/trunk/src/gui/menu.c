@@ -417,10 +417,8 @@ static void menu_show_options(void){
 #endif
 
 	char *video_opts[MAX_VIDEO_MODES]={"Video normal",
-#ifndef WIZLIB	    
 					   "Fullscreen",
-					   "Fullscreen aspect ratio"
-#endif
+					   "Fullscreen aspect ratio",
 					   "Double size",
 					   "Deformed double size",					   
 					   "Interpolation",

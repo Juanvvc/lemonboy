@@ -172,16 +172,12 @@ void vid_init()
 		gp2x_video_RGB_setscaling(160, 120);
 #endif
 		break;
-#ifndef WIZLIB		
-	case vmode_fsasp://fullscreen, aspect ratio
-		fb.offset=14*fb.pelsize; fps_x=14; fps_y=0;
-		gp2x_video_RGB_setscaling(192, 144);
-		break;
-	case vmode_fs: // fullscreen
-		fb.offset=0; fps_x=fps_y=0;
-		gp2x_video_RGB_setscaling(160, 144);
-		break;
-#endif		
+        case vmode_fsasp://fullscreen, aspect ratio
+                fb.offset=0; fps_x=14; fps_y=0;
+                break;
+        case vmode_fs: // fullscreen
+                fb.offset=0; fps_x=fps_y=0;
+                break;
 	default: //normal
 		fb.offset=(80+48*320)*fb.pelsize; fps_x = 80; fps_y = 48;
 #ifndef WIZLIB
@@ -210,7 +206,32 @@ void scaleline2x(void *dst, void *src){
     MEMCPY(dst, t, 320*fb.pelsize);
 }
 
-			static int done = 0;
+void scaleline53x(void *dst, void *src, int width, int offset){
+        byte *t=tmpline+offset*fb.pelsize;
+        int tmpx, pixel1, pixel2;
+        tmpx=width+3;
+        while((tmpx-=3)>0){
+                MEMCPY(t, src, fb.pelsize);
+                MEMCPY(t+fb.pelsize, src, fb.pelsize);
+                t+=2*fb.pelsize;
+                src+=fb.pelsize;
+                
+                MEMCPY(t, src, fb.pelsize);
+                MEMCPY(t+fb.pelsize, src, fb.pelsize);
+                t+=2*fb.pelsize;
+                src+=fb.pelsize;
+                
+                MEMCPY(t, src, fb.pelsize);
+                t+=fb.pelsize;
+                src+=fb.pelsize;
+        }
+        //MEMCPY(dst, tmpline, 320*fb.pelsize);
+        MEMCPY(dst+offset*fb.pelsize, tmpline+offset*fb.pelsize, width*fb.pelsize*5/3+1);
+}
+
+
+
+static int done = 0;
 
 /** Draws a frame on the screen */
 void vid_begin(){
@@ -377,6 +398,50 @@ void vid_begin(){
 			    fs+=fb.pitch;
 			}
 			break;
+                case vmode_fsasp:
+                        tempy=144+3;
+                        fs=fakescreen;
+                        s=(void *)fb1_16bit;
+                        while(tempy-=3){
+                                scaleline53x(s, fs, 160, 27);
+                                s+=320*fb.pelsize;
+                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
+                                s+=320*fb.pelsize;
+                                fs+=fb.pitch;
+                                
+                                scaleline53x(s, fs, 160, 27);
+                                s+=320*fb.pelsize;
+                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
+                                s+=320*fb.pelsize;
+                                fs+=fb.pitch;
+                                
+                                scaleline53x(s, fs, 160, 27);
+                                s+=320*fb.pelsize;
+                                fs+=fb.pitch;
+                        }
+                        break;
+                case vmode_fs:
+                        tempy=144+3;
+                        fs=fakescreen;
+                        s=(void *)fb1_16bit;
+                        while(tempy-=3){
+                                scaleline2x(s, fs);
+                                s+=320*fb.pelsize;
+                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
+                                s+=320*fb.pelsize;
+                                fs+=fb.pitch;
+                                
+                                scaleline2x(s, fs);
+                                s+=320*fb.pelsize;
+                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
+                                s+=320*fb.pelsize;
+                                fs+=fb.pitch;
+                                
+                                scaleline2x(s, fs);
+                                s+=320*fb.pelsize;
+                                fs+=fb.pitch;
+                        }
+                        break;			
 		default: // normal, fullscreen and fullscreen with ratio
 			tempy=144;
 			fs=fakescreen+fb.offset;
