@@ -69,6 +69,7 @@ extern "C" {
 
 extern unsigned char *fb0_8bit, *fb1_8bit; /* current buffers (8 bit) */
 extern unsigned short *fb0_16bit, *fb1_16bit; /* current buffers (16 bit) */
+extern void *fbfake0, *fbfake1;
 
 #define wiz_video_color8(C,R,G,B) (wiz_video_RGB_palette[(C)].color=((R)>>3)<<11|((G)>>2)<<5|((B)>>3),wiz_video_RGB_palette[(C)].dirty=1)
 #define wiz_video_color16(R,G,B)	(((((R)&0xF8)<<8)|(((G)&0xFC)<<3)|(((B)&0xF8)>>3)))
@@ -131,6 +132,13 @@ extern void wiz_gamelist_text_out(int x, int y, char *eltexto);
 extern void wiz_gamelist_text_out_fmt(int x, int y, char* fmt, ...);
 
 extern void wiz_video_wait_vsync(void);
+
+extern void wiz_ptimer_init(void);
+extern unsigned int wiz_ptimer_get_ticks_ms(void);
+extern void wiz_ptimer_delay_ms( unsigned int delay );
+extern void wiz_ptimer_cleanup(void);
+
+#define MMUHACK 1
 
 #ifdef MMUHACK
 #include "warm.h"

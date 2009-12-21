@@ -32,7 +32,9 @@ CFLAGS = -O3 -mcpu=arm926ej-s -ffast-math -fomit-frame-pointer
 
 include Version
 
-MINIMAL_OBJS = sys/gp2x/squidgehack.o sys/gp2x/gp2x.o sys/wiz/wiz_lib.o sys/wiz/sdlsound.o sys/wiz/uppermem.o sys/wiz/pollux_set.o sys/gp2x/memcpy.o sys/wiz/sys_cacheflush.o sys/gp2x/memset.o sys/gp2x/upscale_aspect.o
+MINIMAL_OBJS = sys/gp2x/squidgehack.o sys/gp2x/gp2x.o sys/wiz/wiz_lib.o sys/wiz/sdlsound.o sys/wiz/uppermem.o sys/wiz/pollux_set.o \
+	       sys/gp2x/memcpy.o sys/wiz/sys_cacheflush.o sys/gp2x/memset.o sys/gp2x/upscale_aspect.o sys/wiz/warm.o
+
 OBJS = lcd.o refresh.o lcdc.o palette.o cpu.o mem.o rtc.o hw.o sound.o \
 	events.o keytable.o \
 	loader.o save.o emu.o main.o \
