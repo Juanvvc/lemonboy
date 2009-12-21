@@ -12,6 +12,8 @@
 
 #ifdef WIZLIB
 #include "../wiz/wiz_lib.h"
+#define SDL_Delay wiz_ptimer_delay_ms
+#define SDL_GetTicks wiz_ptimer_get_ticks_ms
 #else
 #include "minimal.h"
 #include "cpuclock.h"
@@ -37,7 +39,6 @@
 #include "../scale2x/scalebit.h"
 
 #define ONE_FRAME 16666
-//#define ONE_SECOND 1000000
 #define ONE_SECOND 1000
 
 
@@ -109,7 +110,7 @@ void vid_init()
 	fb.ptr = fakescreen;
 #else
 #if WIZLIB
-	fb.ptr = (byte *)(fb1_16bit);
+	fb.ptr = (byte *)(fbfake1);
 #else
 	fb.ptr = (byte *)(gp2x_video_RGB[0].screen16);
 #endif
@@ -136,42 +137,21 @@ void vid_init()
 
 	switch(options.scaling){
 	case vmode_s2xdef: // scale2x deformed
-		fb.offset=0; fps_x=0; fps_y=0;
-#ifndef WIZLIB
-		gp2x_video_RGB_setscaling(160, 120);
-#endif
-		break;
-	case vmode_s2x: // scale2x
+	case vmode_s2x: // scale2x	  
+	case vmode_dbl: // double size	  
 		fb.offset=0; fps_x=0; fps_y=0;
 #ifndef WIZLIB
 		gp2x_video_RGB_setscaling(160, 120);
 #endif
 		break;
 	case vmode_ipoldbl: // interpolation double
+	case vmode_ipol: // interpolation	  
+	case vmode_dbldef: // double size, deformed	  
 		fb.offset=0; fps_x=0; fps_y=0;
 #ifndef WIZLIB
 		gp2x_video_RGB_setscaling(160, 240);
 #endif
 		break;		
-	case vmode_ipol: // interpolation
-	  	fb.offset=0; fps_x=0; fps_y=0;
-		//fb.offset=(40+10*320)*fb.pelsize; fps_x = 40; fps_y = 10;
-#ifndef WIZLIB
-		gp2x_video_RGB_setscaling(160, 240);
-#endif
-		break;
-	case vmode_dbldef: // double size, deformed
-		fb.offset=0; fps_x=0; fps_y=0;
-#ifndef WIZLIB
-		gp2x_video_RGB_setscaling(160, 240);
-#endif
-		break;
-	case vmode_dbl: // double size
-		fb.offset=0; fps_x=0; fps_y=0;
-#ifndef WIZLIB
-		gp2x_video_RGB_setscaling(160, 120);
-#endif
-		break;
         case vmode_fsasp://fullscreen, aspect ratio
                 fb.offset=0; fps_x=14; fps_y=0;
                 break;
@@ -186,8 +166,8 @@ void vid_init()
 		break;
 	}
 	
-	vid_black_screen((void*)fb0_16bit);
-	vid_black_screen((void*)fb1_16bit);
+	vid_black_screen((void*)fbfake0);
+	vid_black_screen((void*)fbfake1);
 }
 
 static byte tmpline[160*2*4]; // up to pelsize=4 systems
@@ -238,11 +218,10 @@ void vid_begin(){
 	unsigned long timer=gp2x_timer_read();
 	unsigned long before=backuptimer;
 	unsigned int lastenabled=fb.enabled;
-	void *fs, *s, *s0, *s1;
-	byte tmpscreen[320*240*fb.pelsize];
+	void *fs, *s0, *s1, *s2;
 	int d1, d2, d3, d4;
 	int tempy, line;
-	
+		
 	// a simple frameskip algorithm, valid for games with at least 30FPS
 	// Algorithm: each two frames, check if the last frame was on time. If
 	// it wasn't, skip the next frame
@@ -259,14 +238,16 @@ void vid_begin(){
 #ifdef DOUBLEBF
 		// if not DOUBLEBF, gnuboy used directly the screen and we do not need to do any more here.
 		// if DOUBLEBF, blit fakescreen on the real screen
+#ifdef WIZLIB
+		s0=(void *)fbfake0;
+		s1=(void *)fbfake1;
+		s2=(void *)fb0_16bit;
+#else
+		s0=(void *)gp2x_video_RGB[0].screen16;
+#endif		
+		
 		switch(options.scaling){
 		case vmode_s2xdef: // scale2x deformed
-#ifdef WIZLIB
-			s0=(void *)fb0_16bit;
-			s1=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
 			scale(2, s0, 320*fb.pelsize, fakescreen, fb.pitch, fb.pelsize, 160, 144);
 
 			int src_line, dst_line;
@@ -281,20 +262,10 @@ void vid_begin(){
 			break;
 		case vmode_s2x: // scale2x
 			fs=fakescreen+options.voffset*fb.pitch; //+fb.offset(==0);
-#ifdef WIZLIB
-			s=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
-			scale(2, s, 320*fb.pelsize, fs, fb.pitch, fb.pelsize, 160, 144);
+
+			scale(2, s1, 320*fb.pelsize, fs, fb.pitch, fb.pelsize, 160, 144);
 			break;
 		case vmode_ipoldbl: // INTERPOLATION Double
-#ifdef WIZLIB
-			s0=(void *)fb0_16bit;
-			s1=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
 			// normal screen is 160x144
 			// the first upscale will make this 214x190
 			// the second upscale will make this 286x252 (effective 240)
@@ -305,9 +276,9 @@ void vid_begin(){
 			upscale_aspect(s0, fakescreen);
 
 			// upscale the parts for the upper screen
-			upscale_aspect(tmpscreen, s0);
+			upscale_aspect(s2, s0);
 			// copy the upper half to the screen
-			fs = &tmpscreen[0]+(320*32*fb.pelsize);
+			fs = s2+(320*32*fb.pelsize);
 			tempy=124;
 			line = 1;
 			while(tempy--){
@@ -321,9 +292,9 @@ void vid_begin(){
 			}
 
 			// upscale the parts for the lower screen
-			upscale_aspect(tmpscreen, s0+320*96*fb.pelsize);
+			upscale_aspect(s2, s0+320*96*fb.pelsize);
 			// copy the lower half to the screen
-			fs = &tmpscreen[0]+(320*30*fb.pelsize);
+			fs = s2+(320*30*fb.pelsize);
 			tempy=124;
 			line = 1;
 			while(tempy--){
@@ -337,12 +308,6 @@ void vid_begin(){
 			}
 			break;
 		case vmode_ipol: // INTERPOLATION
-#ifdef WIZLIB			
-			s0=(void *)fb0_16bit;
-			s1=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
 			vid_black_screen(s0);
 			upscale_aspect(s0, fakescreen);
 			
@@ -363,21 +328,17 @@ void vid_begin(){
 			d4=d3+options.vdeformation;
 			//d5==144=f4+24-options.distorsion>>1;
 			fs=fakescreen; //+fb.offset(==0);
-#ifdef WIZLIB
-			s=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
+
 			while(tempy--){
-				scaleline2x(s, fs);
-				s+=320*fb.pelsize;
+				scaleline2x(s1, fs);
+				s1+=320*fb.pelsize;
 				if(tempy>d1&&tempy<d4){
 					if(tempy>d2&&tempy<d3){
-						scaleline2x(s, fs);
-						s+=320*fb.pelsize;
+						scaleline2x(s1, fs);
+						s1+=320*fb.pelsize;
 					}else if(tempy&1){
-						scaleline2x(s, fs);
-						s+=320*fb.pelsize;
+						scaleline2x(s1, fs);
+						s1+=320*fb.pelsize;
 					}
 				}
 				fs+=fb.pitch;
@@ -386,74 +347,65 @@ void vid_begin(){
 		case vmode_dbl: // double size
 			tempy=120;
 			fs=fakescreen+options.voffset*fb.pitch; //+fb.offset(==0);
-#ifdef WIZLIB
-			s=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
+
 			while(tempy--){
-			    scaleline2x(s, fs);
-			    MEMCPY(s+320*fb.pelsize, s, 320*fb.pelsize);
-			    s+=2*320*fb.pelsize;
+			    scaleline2x(s1, fs);
+			    MEMCPY(s1+320*fb.pelsize, s1, 320*fb.pelsize);
+			    s1+=2*320*fb.pelsize;
 			    fs+=fb.pitch;
 			}
 			break;
                 case vmode_fsasp:
                         tempy=144+3;
                         fs=fakescreen;
-                        s=(void *)fb1_16bit;
+
                         while(tempy-=3){
-                                scaleline53x(s, fs, 160, 27);
-                                s+=320*fb.pelsize;
-                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
-                                s+=320*fb.pelsize;
+                                scaleline53x(s1, fs, 160, 27);
+                                s1+=320*fb.pelsize;
+                                MEMCPY(s1, s1-320*fb.pelsize, 320*fb.pelsize);
+                                s1+=320*fb.pelsize;
                                 fs+=fb.pitch;
                                 
-                                scaleline53x(s, fs, 160, 27);
-                                s+=320*fb.pelsize;
-                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
-                                s+=320*fb.pelsize;
+                                scaleline53x(s1, fs, 160, 27);
+                                s1+=320*fb.pelsize;
+                                MEMCPY(s1, s1-320*fb.pelsize, 320*fb.pelsize);
+                                s1+=320*fb.pelsize;
                                 fs+=fb.pitch;
                                 
-                                scaleline53x(s, fs, 160, 27);
-                                s+=320*fb.pelsize;
+                                scaleline53x(s1, fs, 160, 27);
+                                s1+=320*fb.pelsize;
                                 fs+=fb.pitch;
                         }
                         break;
                 case vmode_fs:
                         tempy=144+3;
                         fs=fakescreen;
-                        s=(void *)fb1_16bit;
                         while(tempy-=3){
-                                scaleline2x(s, fs);
-                                s+=320*fb.pelsize;
-                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
-                                s+=320*fb.pelsize;
+                                scaleline2x(s1, fs);
+                                s1+=320*fb.pelsize;
+                                MEMCPY(s1, s1-320*fb.pelsize, 320*fb.pelsize);
+                                s1+=320*fb.pelsize;
                                 fs+=fb.pitch;
                                 
-                                scaleline2x(s, fs);
-                                s+=320*fb.pelsize;
-                                MEMCPY(s, s-320*fb.pelsize, 320*fb.pelsize);
-                                s+=320*fb.pelsize;
+                                scaleline2x(s1, fs);
+                                s1+=320*fb.pelsize;
+                                MEMCPY(s1, s1-320*fb.pelsize, 320*fb.pelsize);
+                                s1+=320*fb.pelsize;
                                 fs+=fb.pitch;
                                 
-                                scaleline2x(s, fs);
-                                s+=320*fb.pelsize;
+                                scaleline2x(s1, fs);
+                                s1+=320*fb.pelsize;
                                 fs+=fb.pitch;
                         }
                         break;			
 		default: // normal, fullscreen and fullscreen with ratio
 			tempy=144;
 			fs=fakescreen+fb.offset;
-#ifdef WIZLIB
-			s=(void *)fb1_16bit;
-#else
-			s=(void *)gp2x_video_RGB[0].screen16;
-#endif
-			s+=fb.offset;
+
+			s1+=fb.offset;
 			while(tempy--){
-				MEMCPY(s, fs, 160*fb.pelsize);
-				s+=320*fb.pelsize;
+				MEMCPY(s1, fs, 160*fb.pelsize);
+				s1+=320*fb.pelsize;
 				fs+=fb.pitch;
 			}
 		}
@@ -501,7 +453,7 @@ void vid_begin(){
 #endif
 #ifndef DOUBLEBF
 #ifdef WIZLIB
-		fb.ptr=(byte *)(fb1_16bit);
+		fb.ptr=(byte *)(fbfake1);
 #else
 		fb.ptr=(byte *)(gp2x_video_RGB[0].screen16);
 #endif
@@ -533,6 +485,12 @@ void vid_preinit()
 }
 
 void vid_close(){
+#ifdef WIZLIB  
+	vid_black_screen((void*)fbfake0);
+	vid_black_screen((void*)fbfake1);
+	vid_black_screen((void*)fb0_16bit);
+	vid_black_screen((void*)fb1_16bit);	
+#endif
 	// not calling to gp2x_deinit(): it will be called at the end of the program in main.shutdown()
 }
 
@@ -565,7 +523,7 @@ void vid_draw_border(image * border){
 void vid_redraw(void){
 #ifdef DOUBLEBF
 #ifdef WIZLIB
-	MEMCPY((void*)fb1_16bit, fakescreen, fb.w * fb.h * fb.pelsize);
+	MEMCPY((void*)fbfake1, fakescreen, fb.w * fb.h * fb.pelsize);
 	gp2x_video_flip_single();
 #else
 	MEMCPY(gp2x_video_RGB[0].screen16, fakescreen, fb.w * fb.h * fb.pelsize);
@@ -573,9 +531,9 @@ void vid_redraw(void){
 #endif
 #else
 #ifdef WIZLIB
-	MEMCPY((void*)fb1_16bit, fb.ptr, fb.w * fb.h * fb.pelsize);
+	MEMCPY((void*)fbfake1, fb.ptr, fb.w * fb.h * fb.pelsize);
 	gp2x_video_flip_single();
-	fb.ptr = fb1_16bit;
+	fb.ptr = fbfake1;
 #else
 	MEMCPY(gp2x_video_RGB[0].screen16, fb.ptr, fb.w * fb.h * fb.pelsize);
 	gp2x_video_RGB_flip(0);
@@ -621,17 +579,17 @@ void ev_poll()
 // 	}else{
 		// manage sound
 		if ((pad & GP2X_VOL_UP) && (options.volumen <100) && options.sound){
-				options.volumen++;
-				pcm_volume(options.volumen);
-				sprintf(volume, "Volume %d", options.volumen);
-				vid_message(volume, 60);
+			options.volumen++;
+			pcm_volume(options.volumen);
+			sprintf(volume, "Volume %d", options.volumen);
+			vid_message(volume, 60);
 		}
 			
 		if ((pad & GP2X_VOL_DOWN) && (options.volumen >0) && options.sound)	{
 			options.volumen--;
-				pcm_volume(options.volumen);
-				sprintf(volume, "Volume %d", options.volumen);
-				vid_message(volume, 60);
+			pcm_volume(options.volumen);
+			sprintf(volume, "Volume %d", options.volumen);
+			vid_message(volume, 60);
 		}
 // 	}
 }

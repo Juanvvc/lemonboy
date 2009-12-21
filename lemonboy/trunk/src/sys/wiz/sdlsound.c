@@ -1,6 +1,7 @@
 #ifndef GP2X_SOUND_THREAD
 
 #include "SDL/SDL.h"
+#include "wiz_lib.h"
 #include "pcm.h"
 #include "rc.h"
 
@@ -18,6 +19,7 @@
 struct pcm pcm;
 
 
+#define SAMPLES 2048
 static int sound = 1;
 static int samplerate = 22050;
 static int stereo = 1;
@@ -50,7 +52,7 @@ void pcm_init()
 	as.freq = samplerate;
 	as.format = AUDIO_U16SYS;
 	as.channels = 1 + stereo;
-	as.samples = 4096; //samplerate / 60;
+	as.samples = SAMPLES; //samplerate / 60;
 	//for (i = 1; i < as.samples; i<<=1);
 	//as.samples = i;
 	as.callback = audio_callback;
@@ -75,7 +77,7 @@ int pcm_submit()
 	if (!pcm.buf) return 0;
 	if (pcm.pos < pcm.len) return 1;
 	while (!audio_done)
-		SDL_Delay(4);
+		wiz_ptimer_delay_ms(4);
 	audio_done = 0;
 	pcm.pos = 0;
 	return 1;
@@ -93,7 +95,7 @@ void pcm_pause(int p)
 
 void pcm_volume(int n)
 {
-	
+	wiz_sound_volume( n, n );
 }
 
 #endif

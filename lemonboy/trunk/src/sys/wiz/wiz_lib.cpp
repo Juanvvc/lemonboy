@@ -1,21 +1,10 @@
 #include "wiz_lib.h"
 
-void WIZ_AdjustVolume( int direction );
-#define VOLUME_MIN 0
-#define VOLUME_MAX 100
-#define VOLUME_CHANGE_RATE 2
-#define VOLUME_NOCHG 0
-#define VOLUME_DOWN 1
-#define VOLUME_UP 2
-static int master_volume;
-static int volume = 20;
-static int volume_direction;
-
 #define FB0_0 (0x2A00000)
 #define FB0_1 (0x2A00000+320*240*2)
 #define FB1_0 (0x2A00000+320*240*4)
 #define FB1_1 (0x2A00000+320*240*6)
-#define FBX_L (320*240*2)
+#define FBX_L (320*240*4)
 unsigned char *uppermem;
 
 /* register access */
@@ -28,16 +17,18 @@ static unsigned int bkregs32[15];	/* backing up values */
 /* library variables */
 static int layer_width[2];
 
+void *fbfake0, *fbfake1;
+
 unsigned char *fb0_8bit, *fb1_8bit; /* current buffers (8 bit) */
 unsigned short *fb0_16bit, *fb1_16bit; /* current buffers (16 bit) */
 static unsigned short *fb0_0, *fb0_1; /* layer 0, buffer 0 : layer 0, buffer 1 (RGB) */
 static unsigned short *fb1_0, *fb1_1; /* layer 1, buffer 0 : layer 1, buffer 1 (RGB) */
 
-int	wiz_sound_rate=22050;
-int	wiz_sound_stereo=0;
+int wiz_sound_rate=22050;
+int wiz_sound_stereo=0;
 int wiz_clock=533;
 int rotate_controls=0;
-int	wiz_ram_tweaks=0;
+int wiz_ram_tweaks=1;
 int wiz_rotated_video=1;
 
 static void lc_setfb(int layer, unsigned short *set_to);
@@ -288,7 +279,7 @@ static void lc_screensize(int w, int h)
 
 	// enable 120 Hz
 	/* DPCHTOTAL=397; DPCHSWIDTH=1; DPCHASTART=37; DPCHAEND=277; DPCVTOTAL=341; DPCVSWIDTH=0; DPCVASTART=17; DPCVAEND=337; DPCCLKGEN0 = (DPCCLKGEN0&0xfc0f)|((9-1)<<4); */
-    pollux_set(memregs16, "lcd_timings=397,1,37,277,341,0,17,337;dpc_clkdiv0=9");
+	pollux_set(memregs16, "lcd_timings=397,1,37,277,341,0,17,337;dpc_clkdiv0=9");
 	//check_hz();
 }
 
@@ -364,6 +355,8 @@ int wiz_init(int bpp, int rate, int bits, int stereo)
 	    /* assign initial framebuffers */
 		fb0_16bit = fb0_1; fb0_8bit=(unsigned char *)fb0_16bit;
 		fb1_16bit = fb1_1; fb1_8bit=(unsigned char *)fb1_16bit;
+		fbfake0 = malloc(FBX_L);
+		fbfake1 = malloc(FBX_L);
 
 		/* clear framebuffers */
 		memset((void*)fb0_0, 0x00, FBX_L);
@@ -386,13 +379,13 @@ int wiz_init(int bpp, int rate, int bits, int stereo)
 		{
 		    lc_setlayer(0, false, false, false, false, PTRGB565); /* set default layer settings */
 		    lc_setlayer(1, true, false, false, false, PTRGB565);
-		int i;
-		for (i=0; i<256; i++)
-		{
-		    wiz_video_color8(i,0,0,0);
-		}
-		wiz_video_color8(255,255,255,255);
-		wiz_video_setpalette();
+		    int i;
+		    for (i=0; i<256; i++)
+		    {
+			wiz_video_color8(i,0,0,0);
+		    }
+		    wiz_video_color8(255,255,255,255);
+		    wiz_video_setpalette();
 		}
 		lc_flipfb(0,1);	/* set initial addresses in hardware */
 		lc_flipfb(1,1);
@@ -421,17 +414,19 @@ int wiz_init(int bpp, int rate, int bits, int stereo)
 	    rate=(rate<22050?22050:rate);
 		if (ioctl(wiz_dev[1], SNDCTL_DSP_SPEED,  &rate)==-1) /* rate */
 		    printf("Error in SNDCTL_DSP_SPEED\n");
-		wiz_sound_volume(100,100); /* volume */
-	#else
-	    WIZ_AdjustVolume(VOLUME_UP);
-	#endif
 		
-
+		wiz_sound_volume(100,100); /* volume */
+	#endif
+	    wiz_ptimer_init();
+		
 	    /* Enable RAM tweaks */
 	    if (wiz_ram_tweaks)
 		pollux_set(memregs16, "ram_timings=2,9,4,1,1,1,1");
-
-		printf("Wizlib Init OK\n");
+	    
+	    if (wiz_rotated_video)
+		wiz_set_video_mode(16,240,320);
+	    
+	    printf("Wizlib Init OK\n");
 	}
 	else
 	{
@@ -444,10 +439,18 @@ int wiz_init(int bpp, int rate, int bits, int stereo)
 void wiz_deinit(void)
 {
 	printf("wiz_deinit()... ");
+	
+	if (wiz_rotated_video)
+	    lc_screensize(320,240);
+	
+	wiz_ptimer_cleanup();
 
   	memset(fb1_16bit, 0, FBX_L); wiz_video_flip();
   	memset(fb1_16bit, 0, FBX_L); wiz_video_flip();
 	wiz_video_flip_single();
+	
+	free(fbfake0);
+	free(fbfake1);
 
 #ifdef MMUHACK
     warm_finish();
@@ -491,20 +494,13 @@ void wiz_set_clock(int speed)
 
 unsigned int wiz_joystick_read(int n)
 {
-	extern int master_volume; 
     unsigned int res=0;
     if (n==0)
     {
         res=~((GPIOCPAD << 16) | GPIOBPAD);
-   		//if ( (res & WIZ_VOLUP) &&  (res & WIZ_VOLDOWN)) wiz_sound_volume(100,100);
-   		//if ( (res & WIZ_VOLUP) && !(res & WIZ_VOLDOWN)) wiz_sound_volume(master_volume+1,master_volume+1);
-   		//if (!(res & WIZ_VOLUP) &&  (res & WIZ_VOLDOWN)) wiz_sound_volume(master_volume-1,master_volume-1);
-		
-		if ( (res & WIZ_VOLUP) && !(res & WIZ_VOLDOWN)) WIZ_AdjustVolume(VOLUME_UP);
-		if (!(res & WIZ_VOLUP) &&  (res & WIZ_VOLDOWN)) WIZ_AdjustVolume(VOLUME_DOWN);
-   		if ((rotate_controls) && (res & WIZ_MENU)) res |= WIZ_B;
+	if ((rotate_controls) && (res & WIZ_MENU)) res |= WIZ_B;
     }
-	return res;
+    return res;
 }
 
 void wiz_video_flip(void)
@@ -512,8 +508,27 @@ void wiz_video_flip(void)
     lc_flipfb(1,0);
 }
 
+#define WIDTH 320
+#define HEIGHT 240
 void wiz_video_flip_single(void)
 {
+    const unsigned short* src = (unsigned short*)fbfake1;
+    unsigned short* dst = (unsigned short*)fb1_16bit + WIDTH * HEIGHT;    
+    
+    if (wiz_rotated_video)
+    {	  
+	  for(int i = HEIGHT; i--; dst += WIDTH * HEIGHT + 1) {
+	      for(int j = WIDTH; j--; ) {
+		  dst -= HEIGHT;
+		  *dst = *src++;
+	      }
+	  }
+    }
+    else
+    {
+	  memcpy((void*)fb1_16bit, fbfake1, FBX_L);
+    }
+  
     lc_flipfb(1,1);
 }
 
@@ -548,12 +563,13 @@ int master_volume;
 
 void wiz_sound_volume(int l, int r)
 {
-	extern int master_volume; 
- 	l=l<0?0:l; l=l>100?100:l; r=r<0?0:r; r=r>100?100:r;
- 	if (l>0)
- 		master_volume=l;
- 	l=(((l*0x50)/100)<<8)|((r*0x50)/100); /*0x5A, 0x60*/
- 	ioctl(wiz_dev[2], SOUND_MIXER_WRITE_PCM, &l); /*SOUND_MIXER_WRITE_VOLUME*/
+	unsigned long soundDev = open("/dev/mixer", O_RDWR);
+	if(soundDev)
+	{
+		int vol = ((l << 8) | r);
+		ioctl(soundDev, SOUND_MIXER_WRITE_PCM, &vol);
+		close(soundDev);
+	}	
 }
 
 
@@ -830,8 +846,8 @@ void wiz_gamelist_text_out(int x, int y, char *eltexto)
 	strncpy(texto,eltexto,32);
 	texto[32]=0;
 	if (texto[0]!='-')
-		wiz_text(fb1_16bit,x+1,y+1,texto,0);
-	wiz_text(fb1_16bit,x,y,texto,255);
+		wiz_text((unsigned short*)fbfake1,x+1,y+1,texto,0);
+	wiz_text((unsigned short*)fbfake1,x,y,texto,255);
 }
 
 /* Variadic functions guide found at http://www.unixpapa.com/incnote/variadic.html */
@@ -860,7 +876,7 @@ static void wiz_text_log(char *texto)
 	{
 		memset(fb1_8bit,0,320*240);
 	}
-	wiz_text(fb1_16bit,0,log,texto,255);
+	wiz_text((unsigned short*)fbfake1,0,log,texto,255);
 	log+=8;
 	if(log>239) log=0;
 }
@@ -906,32 +922,45 @@ void wiz_video_wait_vsync(void)
   DPCCTRL0 |= (1 << 10);
 }
 
-void WIZ_AdjustVolume( int direction )
+// Timer functions
+
+#define TIMER_BASE3 0x1980
+#define TIMER_REG(x) memregs32[(TIMER_BASE3 + x) >> 2]
+
+void wiz_ptimer_init(void)
 {
-	if( direction != VOLUME_NOCHG )
-	{
-		if( volume <= 10 )
-		{
-			if( direction == VOLUME_UP )   volume += VOLUME_CHANGE_RATE/2;
-			if( direction == VOLUME_DOWN ) volume -= VOLUME_CHANGE_RATE/2;
-		}
-		else
-		{
-			if( direction == VOLUME_UP )   volume += VOLUME_CHANGE_RATE;
-			if( direction == VOLUME_DOWN ) volume -= VOLUME_CHANGE_RATE;
-		}
+    TIMER_REG(0x44) = 0x922;
+    TIMER_REG(0x40) = 0x0c;
+    TIMER_REG(0x08) = 0x6b;
 
-		if( volume < VOLUME_MIN ) volume = VOLUME_MIN;
-		if( volume > VOLUME_MAX ) volume = VOLUME_MAX;
-
-		printf( "Volume Change: %i\n", volume );
-		
-		unsigned long soundDev = open("/dev/mixer", O_RDWR);
-		if(soundDev)
-		{
-			int vol = ((volume << 8) | volume);
-			ioctl(soundDev, SOUND_MIXER_WRITE_PCM, &vol);
-			close(soundDev);
-		}		
-	}
+    printf( "Wiz hardware timer started\n" );
 }
+
+unsigned int wiz_ptimer_get_ticks_ms(void)
+{
+    unsigned int microsec;
+
+    TIMER_REG(0x08) = 0x4b;  /* run timer, latch value */
+    microsec = TIMER_REG(0);
+    return (microsec/1000);
+}
+
+void wiz_ptimer_delay_ms( unsigned int delay )
+{
+    unsigned int start;
+
+    start = wiz_ptimer_get_ticks_ms();
+    while(wiz_ptimer_get_ticks_ms()-start < delay) {}
+}
+
+void wiz_ptimer_cleanup(void)
+{
+    TIMER_REG(0x40) = 0x0c;
+    TIMER_REG(0x08) = 0x23;
+    TIMER_REG(0x00) = 0;
+    TIMER_REG(0x40) = 0;
+    TIMER_REG(0x44) = 0;
+    
+    printf( "Wiz hardware timer stoped\n" );
+}
+

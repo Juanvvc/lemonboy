@@ -1,6 +1,9 @@
 #ifdef WIZ_BUILD
 
 #include "../common.h"
+#include "../wiz/wiz_lib.h"
+#define SDL_Delay wiz_ptimer_delay_ms
+#define SDL_GetTicks wiz_ptimer_get_ticks_ms
 #define IN_STRIDE 320
 
 #else

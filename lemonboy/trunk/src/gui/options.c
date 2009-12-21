@@ -33,7 +33,7 @@ void options_init(){
 	options.romsdir = strdup("roms");
 	options.vsync = FALSE;
 	options.scaling = 0;
-	options.volumen = 80;
+	options.volumen = 70;
 	options.showfps = FALSE;
 	options.cpuclock = 200;
 	options.samplerate = 44100;

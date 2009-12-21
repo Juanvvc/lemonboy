@@ -15,6 +15,12 @@
 #include "supergb.h"
 #endif
 
+#ifdef WIZ_LIB
+#include "sdl/wiz/wiz_lib.h"
+#define SDL_Delay wiz_ptimer_delay_ms
+#define SDL_GetTicks wiz_ptimer_get_ticks_ms
+#endif
+
 #define FRAMES_PER_SEC 60
 
 static int framelen = 16666;
