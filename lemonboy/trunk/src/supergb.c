@@ -404,7 +404,7 @@ void sgb_multiplayer_req()
 	}
 }
 
-#ifndef DEBUG
+#ifdef DEBUG
 int pindex = 0;
 #endif
 
@@ -432,7 +432,7 @@ void gnuboy_update_palette(int p)
 // 	DPRINT1("%s", cmd);
 // 	rc_command("set colorfilter false");
 
-#ifndef DEBUG
+#ifdef DEBUG
 	// save the palette
  	{
 	image img;

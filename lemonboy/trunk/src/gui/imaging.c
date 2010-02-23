@@ -187,6 +187,7 @@ void unload_font(font_image * font){
 	if(!font) return;
 	unload_png(font->img);
 	FREE(font->info);
+	FREE(font->img);
 }
 
 void unload_png(image * im){
@@ -264,31 +265,34 @@ void draw_sprite(image *data, int xo, int yo, int x, int y, int w, int h){
 /** The same that draw_sprite, but uses the first pixel as transparent color. Warning! This function is NOT optimized.
  */
 void draw_sprite_trans(image *data, int xo, int yo, int x, int y, int w, int h){
-	byte *datadata=data->data;
-	byte *buf = &datadata[(xo+yo*data->w)*fb.pelsize];
-	byte *tmpscreen= &fb.ptr[(x+(fb.w*y))*fb.pelsize];
+	byte *datadata=data->data; // init of data->data
+	byte *buf; // points to data->data[offset]
+	byte *tmpscreen; // points to the buffer
 	int temph, tempw;
 	int tr, i;
 	byte *trans;
 	
+	// calculate true dimensions of the image (not draw outside screen)	
+	if(x<0){ xo-=x; w+=x; x=0; }
+	if(y<0){ yo-=y; h+=y; y=0; }
+	if(xo>data->w||yo>data->h) return;
+	if(x>fb.w||y>fb.h) return;
+	if(x+w>fb.w) w=fb.w-x;
+	if(y+h>fb.h) h=fb.h-y;
+	buf = &datadata[(xo+yo*data->w)*fb.pelsize];
+	tmpscreen= &fb.ptr[(x+(fb.w*y))*fb.pelsize];
+	temph=h;
+	tempw=w;
+
 	// save in trans the transparent color
 	if((trans=malloc(fb.pelsize))==NULL){
-		DPRINT("Error while drawing: out of memory\n");
+		DPRINT("Error while drawing: out of memory");
 		return;
 	}
 	for(i=0; i<fb.pelsize; i++){
 		trans[i]=datadata[i];
 	}
-	
-	// calculate true dimensions of the image (not draw outside screen)	
-	if(x>fb.w||y>fb.h) return;
-	if(x<0) { w += x; x=0; }
-	if(y<0) { h += y; y=0; }
-	if(x+w>fb.w) w=fb.w-x;
-	if(y+h>fb.h) h=fb.h-y;
-	temph=h;
-	tempw=w;
-	
+
 	while (temph--){
 		tempw=w;
 		while(tempw--){
@@ -306,6 +310,8 @@ void draw_sprite_trans(image *data, int xo, int yo, int x, int y, int w, int h){
 		tmpscreen += (fb.w - w) * fb.pelsize;
 		buf += (data->w - w) * fb.pelsize;
 	}
+
+	FREE(trans);
 }
 
 void free_sprite(image *rect){
