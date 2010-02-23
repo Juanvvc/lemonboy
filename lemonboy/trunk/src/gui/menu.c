@@ -280,8 +280,10 @@ menu_select_file_end:
 		//clear_screen();
 	}
 	// clean readable names
-	for(i=0; i<files_dir->num_files; i++) free(readable_names[i]);
-	FREE(readable_names);
+	if(files_dir!=NULL && readable_names!=NULL){
+		for(i=0; i<files_dir->num_files; i++) free(readable_names[i]);
+		FREE(readable_names);
+	}
 	
 	// return the selected file
 	if(cancel){
@@ -364,7 +366,7 @@ static int menu_advance_clock(void){
 				break;
 			case MENU_CLOCK_DAYS:
 				days=roll_number(days, 30, button2);
-				sprintf(menu_options[MENU_CLOCK_DAYS], "Days:  %2d", hours);
+				sprintf(menu_options[MENU_CLOCK_DAYS], "Days:  %2d", days);
 				break;
 			}
 			break;
